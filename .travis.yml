@@ -1,4 +1,4 @@
-sudo: false
+sudo: true
 language: python
 python:
   - 3.3
@@ -6,9 +6,10 @@ python:
   - 3.5
   - pypy3
 install:
-  - pip install tox
-  - pip install hachoir_core
-  - pip install hachoir_parser
-  - pip install hachoir_metadata
+  - sudo pip install tox
+  - sudo pip install hachoir-core
+  - sudo pip install hachoir-parser
+  - sudo pip install hachoir-regex
+  - sudo pip install hachoir-subfile
 script:
   - tox -e $(echo py$TRAVIS_PYTHON_VERSION | tr -d . | sed -e 's/pypypy/pypy/')-$COVPYYAML
