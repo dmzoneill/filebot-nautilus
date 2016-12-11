@@ -11,5 +11,3 @@ install:
   - sudo pip install hachoir-parser
   - sudo pip install hachoir-regex
   - sudo pip install hachoir-subfile
-script:
-  - tox -e $(echo py$TRAVIS_PYTHON_VERSION | tr -d . | sed -e 's/pypypy/pypy/')-$COVPYYAML
