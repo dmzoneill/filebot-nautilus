@@ -1,0 +1,14 @@
+sudo: false
+language: python
+python:
+  - 3.3
+  - 3.4
+  - 3.5
+  - pypy3
+install:
+  - pip install tox
+  - pip install hachoir_core
+  - pip install hachoir_parser
+  - pip install hachoir_metadata
+script:
+  - tox -e $(echo py$TRAVIS_PYTHON_VERSION | tr -d . | sed -e 's/pypypy/pypy/')-$COVPYYAML
