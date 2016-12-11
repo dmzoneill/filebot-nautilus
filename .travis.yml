@@ -11,3 +11,5 @@ install:
   - sudo pip install hachoir-parser
   - sudo pip install hachoir-regex
   - sudo pip install hachoir-subfile
+script:
+  - python -m py_compile script.py
