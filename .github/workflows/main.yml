@@ -1,4 +1,4 @@
-name: Update Gnome Extension
+name: filebot-nautilus
 
 on:
   push:
