@@ -34,3 +34,4 @@ jobs:
           pip install hachoir-regex
           pip install hachoir-subfile
           python -m py_compile MediaInfoExt.py
+
