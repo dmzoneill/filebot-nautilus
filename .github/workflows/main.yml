@@ -23,3 +23,14 @@ jobs:
           VALIDATE_ALL_CODEBASE: false
           DEFAULT_BRANCH: "main"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compile
+        env:
+          ghtoken: ${{ secrets.PUBLISH }}
+        run: |-
+          pip install tox
+          pip install hachoir-core
+          pip install hachoir-parser
+          pip install hachoir-regex
+          pip install hachoir-subfile
+          python -m py_compile MediaInfoExt.py
