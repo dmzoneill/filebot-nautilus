@@ -124,7 +124,7 @@ def test_rename(file_info):
         output = output.decode("utf-8")
         error = error.decode("utf-8")
 
-        pprint(output)
+        print(output)
 
         p = re.compile("\[TEST\] from \[(.*?)\] to \[(.*?)\]")
         result = p.search(output)
