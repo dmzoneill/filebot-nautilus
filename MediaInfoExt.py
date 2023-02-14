@@ -3,12 +3,12 @@
 
 import logging
 import threading
-from gi.repository import Nautilus, Gio, GObject
+from gi.repository import Nautilus, Gio, GObject, GLib
 import urllib.parse
 import os
 import gi
 
-from MediaInfoExtHelpers import test_rename, file_info_update, ffprobe
+from MediaInfoExtHelpers import file_info_update, run_task
 from MediaInfoFileBot import *
 import hashlib
 
@@ -18,9 +18,7 @@ gi.require_version("Gtk", "4.0")
 
 GObject.threads_init()
 
-logging.basicConfig(
-    filename="/tmp/VideoMetadataExtension.log", level=logging.DEBUG
-)
+logging.basicConfig(filename="/tmp/VideoMetadataExtension.log", level=logging.DEBUG)
 
 
 def nautilus_module_initialize(module):
@@ -28,7 +26,7 @@ def nautilus_module_initialize(module):
         Nautilus.InfoProvider,
         Nautilus.MenuProvider,
         Nautilus.ColumnProvider,
-        Nautilus.PropertiesModelProvider
+        Nautilus.PropertiesModelProvider,
     ]
     provider = GObject.type_register(VideoMetadataExtension)
     Nautilus.module_register_type(module, provider, type_list)
@@ -39,11 +37,12 @@ class VideoMetadataExtension(
     Nautilus.InfoProvider,
     Nautilus.MenuProvider,
     Nautilus.ColumnProvider,
-    Nautilus.PropertiesModelProvider
+    Nautilus.PropertiesModelProvider,
 ):
     def __init__(self):
 
         self.details = {}
+        self.threads = {}
         self.lock = threading.Lock()
         self.queue = []
 
@@ -178,8 +177,9 @@ class VideoMetadataExtension(
             return Nautilus.OperationResult.COMPLETE
 
         self.timers.append(
-            GObject.timeout_add_seconds(
-                1, self.update_info, provider, handle, closure, file_info)
+            GLib.timeout_add_seconds(
+                1, self.update_info, provider, handle, closure, file_info
+            )
         )
         return Nautilus.OperationResult.IN_PROGRESS
 
@@ -187,22 +187,32 @@ class VideoMetadataExtension(
         logging.debug("update_info")
         filename = urllib.parse.unquote(file_info.get_uri()[7:])
 
-        name_suggestion = test_rename(file_info)
+        logging.debug("Looking for update on:" + filename)
 
-        self.details[filename] = {}
-        self.details[filename]["file_info"] = file_info
-        self.details[filename]["details"] = ffprobe({}, file_info)
-        self.details[filename]["details"][
-            "name_suggestion"
-        ] = name_suggestion
-        file_info_update(self, filename)
+        with self.lock:
 
-        Nautilus.info_provider_update_complete_invoke(
-            closure,
-            provider,
-            handle,
-            Nautilus.OperationResult.COMPLETE,
-        )
+            if filename in self.details.keys():
+                logging.debug("Completed :" + filename)
+                file_info_update(self, filename)
+                Nautilus.info_provider_update_complete_invoke(
+                    closure,
+                    provider,
+                    handle,
+                    Nautilus.OperationResult.COMPLETE,
+                )
+                del self.threads[filename]
+                return False
+
+            if filename not in self.threads.keys():
+                logging.debug("Starting thread :" + filename)
+                thread = threading.Thread(
+                    target=run_task,
+                    args=(self, file_info),
+                )
+                self.threads[filename] = thread
+                thread.start()
+
+        return True
 
     def cancel_update(self, provider, handle):
         logging.debug("cancel_update")

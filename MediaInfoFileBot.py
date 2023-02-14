@@ -6,12 +6,13 @@ from subprocess import Popen, PIPE
 import os
 import urllib.parse
 import threading
-from gi.repository import GObject, Gtk, Gdk
+
 import gi
 
 gi.require_version("Nautilus", "4.0")
 gi.require_version("Gtk", "4.0")
 
+from gi.repository import GObject, Gtk, Gdk
 
 GObject.threads_init()
 
@@ -84,8 +85,7 @@ class FileBotWindow(Gtk.Window):
             stdout=PIPE,
             stderr=PIPE,
         )
-        output, err = p.communicate(
-            b"input data that is passed to subprocess' stdin")
+        output, err = p.communicate(b"input data that is passed to subprocess' stdin")
         rc = p.returncode
 
         if self.processing == self.todo:

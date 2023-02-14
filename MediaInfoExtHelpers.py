@@ -8,10 +8,10 @@ import subprocess
 import json
 import re
 import time
+import traceback
+from gi.repository import Nautilus
 
-logging.basicConfig(
-    filename="/tmp/VideoMetadataExtension.log", level=logging.DEBUG
-)
+logging.basicConfig(filename="/tmp/VideoMetadataExtension.log", level=logging.DEBUG)
 
 
 def get_output(command):
@@ -60,7 +60,11 @@ def ffprobe(details, file_info):
     try:
 
         # Define the command and arguments to be run
-        command = "ffprobe -hide_banner -loglevel error -print_format json -of json -show_entries format:stream \"" + filename + "\""
+        command = (
+            'ffprobe -hide_banner -loglevel error -print_format json -of json -show_entries format:stream "'
+            + filename
+            + '"'
+        )
 
         output = get_output(command)
         results = json.loads(output)
@@ -83,8 +87,7 @@ def ffprobe(details, file_info):
                         if len(attribute) == 3:
                             if attribute[2] in stream:
                                 video_set = True
-                                details[attribute[0]] = str(
-                                    stream[attribute[2]])
+                                details[attribute[0]] = str(stream[attribute[2]])
 
             if audio_set is False:
                 if stream["codec_type"] == "audio":
@@ -98,8 +101,7 @@ def ffprobe(details, file_info):
 
                         if len(attribute) == 3:
                             if attribute[2] in stream:
-                                details[attribute[0]] = str(
-                                    stream[attribute[2]])
+                                details[attribute[0]] = str(stream[attribute[2]])
                                 audio_set = True
     except Exception as e:
         logging.debug(filename)
@@ -143,9 +145,10 @@ def test_rename(file_info):
 
 def file_info_update(MediaInfoObj, filename):
 
-    logging.debug(filename)
+    logging.debug("file_info_update: " + filename)
 
     if "details" not in MediaInfoObj.details[filename]:
+        logging.debug("file_info_update: false update: " + filename)
         return
 
     logging.debug(pformat(MediaInfoObj.details[filename]["details"]))
@@ -191,3 +194,22 @@ def file_info_update(MediaInfoObj, filename):
         if "audio_codec_name" in MediaInfoObj.details[filename]["details"]
         else "",
     )
+
+
+def run_task(MediaInfoObj, file_info):
+    try:
+        filename = urllib.parse.unquote(file_info.get_uri()[7:])
+
+        name_suggestion = test_rename(file_info)
+        result = ffprobe({}, file_info)
+
+        with MediaInfoObj.lock:
+            MediaInfoObj.details[filename] = {}
+            MediaInfoObj.details[filename]["file_info"] = file_info
+            MediaInfoObj.details[filename]["details"] = result
+            MediaInfoObj.details[filename]["details"][
+                "name_suggestion"
+            ] = name_suggestion
+    except Exception as e:
+        logging.debug(pformat(e))
+        traceback.print_exc()
