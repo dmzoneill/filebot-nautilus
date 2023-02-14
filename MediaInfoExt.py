@@ -3,13 +3,14 @@
 
 import logging
 import threading
-from gi.repository import Nautilus, GObject
+from gi.repository import Nautilus, Gio, GObject
 import urllib.parse
 import os
 import gi
 
-from MediaInfoExtHelpers import run_task
+from MediaInfoExtHelpers import test_rename, file_info_update, ffprobe
 from MediaInfoFileBot import *
+import hashlib
 
 gi.require_version("Nautilus", "4.0")
 gi.require_version("Gtk", "4.0")
@@ -17,9 +18,18 @@ gi.require_version("Gtk", "4.0")
 
 GObject.threads_init()
 
+logging.basicConfig(
+    filename="/tmp/VideoMetadataExtension.log", level=logging.DEBUG
+)
+
 
 def nautilus_module_initialize(module):
-    type_list = [Nautilus.InfoProvider, Nautilus.MenuProvider, Nautilus.ColumnProvider]
+    type_list = [
+        Nautilus.InfoProvider,
+        Nautilus.MenuProvider,
+        Nautilus.ColumnProvider,
+        Nautilus.PropertiesModelProvider
+    ]
     provider = GObject.type_register(VideoMetadataExtension)
     Nautilus.module_register_type(module, provider, type_list)
 
@@ -29,11 +39,13 @@ class VideoMetadataExtension(
     Nautilus.InfoProvider,
     Nautilus.MenuProvider,
     Nautilus.ColumnProvider,
+    Nautilus.PropertiesModelProvider
 ):
     def __init__(self):
 
         self.details = {}
         self.lock = threading.Lock()
+        self.queue = []
 
         logging.basicConfig(
             filename="/tmp/VideoMetadataExtension.log", level=logging.DEBUG
@@ -47,6 +59,46 @@ class VideoMetadataExtension(
             "video/x-flv",
             "video/x-matroska",
         ]
+
+        super().__init__()
+        self.timers = []
+
+    ###########################################################################
+    # Nautilus.PropertiesModelProvider
+    ###########################################################################
+
+    def get_models(self, files):
+        if len(files) != 1:
+            return []
+
+        file = files[0]
+        if file.get_uri_scheme() != "file":
+            return []
+
+        if file.is_directory():
+            return []
+
+        filename = urllib.parse.unquote(file.get_uri()[7:]).encode("utf-8")
+
+        section_model = Gio.ListStore.new(item_type=Nautilus.PropertiesItem)
+
+        section_model.append(
+            Nautilus.PropertiesItem(
+                name="MD5 sum of the filename",
+                value=hashlib.md5(filename).hexdigest(),
+            )
+        )
+
+        return [
+            Nautilus.PropertiesModel(
+                title="MD5Sum",
+                model=section_model,
+            ),
+        ]
+
+    ###########################################################################
+    # Nautilus.ColumnProvider
+    ###########################################################################
 
     def get_columns(self):
 
@@ -89,19 +141,30 @@ class VideoMetadataExtension(
             ),
         )
 
-    # Fixed code
-    def cancel_update(self, provider, handle):
-        pass
+    ###########################################################################
+    # Nautilus.InfoProvider
+    ###########################################################################
+
+    def update_file_info(self, file):
+        logging.debug("update_file_info")
 
     def update_file_info_full(self, provider, handle, closure, file_info):
+        logging.debug("update_file_info_full")
+
         filename = urllib.parse.unquote(file_info.get_uri()[7:])
 
+        if filename in self.details.keys():
+            self.details[filename]["file_info"] = file_info
+            file_info_update(self, filename)
+            return Nautilus.OperationResult.COMPLETE
+
         if file_info.get_uri_scheme() != "file":
-            # print("Skipped wrong uri scheme: " + file_info.get_uri_scheme())
+            # logging.debug("Skipped wrong uri scheme: " +
+            #               file_info.get_uri_scheme())
             return Nautilus.OperationResult.COMPLETE
 
         if os.path.isfile(filename) is False:
-            # print("Skipped not a file: " + filename)
+            # logging.debug("Skipped not a file: " + filename)
             return Nautilus.OperationResult.COMPLETE
 
         is_mime = False
@@ -111,20 +174,45 @@ class VideoMetadataExtension(
                 break
 
         if is_mime is False:
-            # print("Skipped wrong mime: " + filename)
+            # logging.debug("Skipped wrong mime: " + filename)
             return Nautilus.OperationResult.COMPLETE
+
+        self.timers.append(
+            GObject.timeout_add_seconds(
+                1, self.update_info, provider, handle, closure, file_info)
+        )
+        return Nautilus.OperationResult.IN_PROGRESS
+
+    def update_info(self, provider, handle, closure, file_info):
+        logging.debug("update_info")
+        filename = urllib.parse.unquote(file_info.get_uri()[7:])
+
+        name_suggestion = test_rename(file_info)
 
         self.details[filename] = {}
         self.details[filename]["file_info"] = file_info
+        self.details[filename]["details"] = ffprobe({}, file_info)
+        self.details[filename]["details"][
+            "name_suggestion"
+        ] = name_suggestion
+        file_info_update(self, filename)
 
-        thread = threading.Thread(
-            target=run_task,
-            args=(self, provider, handle, closure, self.details[filename]["file_info"]),
+        Nautilus.info_provider_update_complete_invoke(
+            closure,
+            provider,
+            handle,
+            Nautilus.OperationResult.COMPLETE,
         )
-        thread.start()
 
-        # return Nautilus.OperationResult.COMPLETE
-        return
+    def cancel_update(self, provider, handle):
+        logging.debug("cancel_update")
+        for t in self.timers:
+            GObject.source_remove(t)
+        self.timers = []
+
+    ###########################################################################
+    # Nautilus.MenuProvider
+    ###########################################################################
 
     def get_file_items_full(self, provider, files):
         if len(files) != 1:
@@ -165,17 +253,20 @@ class VideoMetadataExtension(
 
         return (top_menuitem,)
 
+    def get_file_items(self, files):
+        logging.debug("get_file_items")
+
+    def get_background_items(self, folder):
+        logging.debug("get_background_items")
+
+    def get_background_items_full(self, provider, folder):
+        logging.debug("get_background_items_full")
+
+    ###########################################################################
+    ###########################################################################
+
     def filebot_activate_cb(self, menu, files, source):
         self.win = FileBotWindow(self, source, files)
         self.win.connect("delete-event", Gtk.main_quit)
         self.win.show_all()
         Gtk.main()
-
-    def get_file_items(self, files):
-        return
-
-    def get_background_items(self, folder):
-        return
-
-    def get_background_items_full(self, provider, folder):
-        return
