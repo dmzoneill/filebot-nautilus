@@ -30,3 +30,6 @@ version: bump
 push: version
 	git pull --rebase
 	git push -u origin main:main -f
+
+archive:
+	tar -czvf archive.tgz *.py
