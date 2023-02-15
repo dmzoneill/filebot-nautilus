@@ -3,13 +3,18 @@
 
 import logging
 from pprint import pformat
+import concurrent.futures
 import urllib.parse
+from os import listdir
+from os.path import isfile, join
 import subprocess
 import json
 import re
 import time
 import traceback
-from gi.repository import Nautilus
+from pathlib import Path
+import mimetypes
+
 
 logging.basicConfig(filename="/tmp/VideoMetadataExtension.log", level=logging.DEBUG)
 
@@ -51,9 +56,7 @@ def get_output(command):
     return output
 
 
-def ffprobe(details, file_info):
-    filename = urllib.parse.unquote(file_info.get_uri()[7:])
-
+def ffprobe(details, filename):
     logging.debug("get_ffprobe")
     logging.debug(filename)
 
@@ -110,8 +113,7 @@ def ffprobe(details, file_info):
     return details
 
 
-def test_rename(file_info):
-    filename = urllib.parse.unquote(file_info.get_uri()[7:])
+def test_rename(filename):
     name_suggestion = ""
 
     try:
@@ -196,20 +198,88 @@ def file_info_update(MediaInfoObj, filename):
     )
 
 
-def run_task(MediaInfoObj, file_info):
+def get_siblings(MediaInfoObj, filename):
+    path = Path(filename)
+    directory = path.parent.absolute()
+    files = []
+
+    videomimes = [
+        "video/x-msvideo",
+        "video/mpeg",
+        "video/x-ms-wmv",
+        "video/mp4",
+        "video/x-flv",
+        "video/x-matroska",
+    ]
+
+    for f in listdir(directory):
+        the_file = join(directory, f)
+
+        if the_file in MediaInfoObj.details.keys():
+            continue
+
+        if isfile(the_file) == False:
+            continue
+
+        mime = mimetypes.guess_type(the_file)[0]
+
+        if mime in videomimes:
+            files.append(the_file)
+
+    return files
+
+
+def run_detail_multi(MediaInfoObj, filename):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        try:
+            for result in executor.map(
+                run_detail, get_siblings(MediaInfoObj, filename)
+            ):
+                with MediaInfoObj.lock:
+                    logging.debug("Updating : " + result["filename"])
+                    MediaInfoObj.details[result["filename"]] = {}
+                    MediaInfoObj.details[result["filename"]]["details"] = result
+                    logging.debug(f"Task result: {result}")
+        except:
+            logging.debug(str(result.exception()))
+
+
+def run_detail(filename):
     try:
-        filename = urllib.parse.unquote(file_info.get_uri()[7:])
+        logging.debug("Multi run task: " + filename)
+        print("Multi run task: " + filename)
+        name_suggestion = test_rename(filename)
+        result = ffprobe({}, filename)
+        result["name_suggestion"] = name_suggestion
+        result["filename"] = filename
+        logging.debug(name_suggestion)
+        logging.debug(result)
+        logging.debug("Got name and details: " + filename)
+        return result
+    except Exception as e:
+        logging.debug(pformat(e))
+        traceback.print_exc()
+        return {"filename": filename, "error": True}
 
-        name_suggestion = test_rename(file_info)
-        result = ffprobe({}, file_info)
 
-        with MediaInfoObj.lock:
-            MediaInfoObj.details[filename] = {}
-            MediaInfoObj.details[filename]["file_info"] = file_info
-            MediaInfoObj.details[filename]["details"] = result
-            MediaInfoObj.details[filename]["details"][
-                "name_suggestion"
-            ] = name_suggestion
+def run_task(MediaInfoObj, filename):
+    try:
+        logging.debug("Run task: " + filename)
+
+        run_detail_multi(MediaInfoObj, filename)
+
+        # name_suggestion = test_rename(filename)
+        # result = ffprobe({}, filename)
+
+        # logging.debug("Got name and details: " + filename)
+
+        # with MediaInfoObj.lock:
+        #     logging.debug("Updating : " + filename)
+        #     MediaInfoObj.details[filename] = {}
+        #     MediaInfoObj.details[filename]["details"] = result
+        #     MediaInfoObj.details[filename]["details"][
+        #         "name_suggestion"
+        #     ] = name_suggestion
     except Exception as e:
         logging.debug(pformat(e))
         traceback.print_exc()

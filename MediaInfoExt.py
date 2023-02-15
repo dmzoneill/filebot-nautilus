@@ -44,7 +44,6 @@ class VideoMetadataExtension(
         self.details = {}
         self.threads = {}
         self.lock = threading.Lock()
-        self.queue = []
 
         logging.basicConfig(
             filename="/tmp/VideoMetadataExtension.log", level=logging.DEBUG
@@ -177,10 +176,11 @@ class VideoMetadataExtension(
             return Nautilus.OperationResult.COMPLETE
 
         self.timers.append(
-            GLib.timeout_add_seconds(
-                1, self.update_info, provider, handle, closure, file_info
+            GLib.timeout_add(
+                333, self.update_info, provider, handle, closure, file_info
             )
         )
+
         return Nautilus.OperationResult.IN_PROGRESS
 
     def update_info(self, provider, handle, closure, file_info):
@@ -193,6 +193,7 @@ class VideoMetadataExtension(
 
             if filename in self.details.keys():
                 logging.debug("Completed :" + filename)
+                self.details[filename]["file_info"] = file_info
                 file_info_update(self, filename)
                 Nautilus.info_provider_update_complete_invoke(
                     closure,
@@ -207,10 +208,30 @@ class VideoMetadataExtension(
                 logging.debug("Starting thread :" + filename)
                 thread = threading.Thread(
                     target=run_task,
-                    args=(self, file_info),
+                    args=(self, filename),
                 )
                 self.threads[filename] = thread
                 thread.start()
+
+        next = file_info.get_string_attribute("name_suggestion")
+        if next is None:
+            next = "."
+        elif next == ".":
+            next = ".."
+        elif next == "..":
+            next = "..."
+        elif next == "...":
+            next = "."
+
+        for X in [
+            "name_suggestion",
+            "video_width",
+            "video_height",
+            "audio_channels",
+            "video_codec_name",
+            "audio_codec_name",
+        ]:
+            file_info.add_string_attribute(X, next)
 
         return True
 
