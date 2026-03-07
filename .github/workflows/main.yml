@@ -14,4 +14,4 @@ jobs:
     secrets: inherit
     uses: dmzoneill/dmzoneill/.github/workflows/dispatch.yaml@main
     with:
-      pling: "1988412"
+      basic: "true"
