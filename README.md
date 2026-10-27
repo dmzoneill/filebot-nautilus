@@ -1,6 +1,11 @@
 # filebot-nautilus
 
+<p align="center">
+  <img src=".github/logo.png" alt="filebot-nautilus logo" width="128" />
+</p>
+
 ## Install
+
 ```
 ln -s $(CWD)/MediaInfoExt.py ~/.local/share/nautilus-python/extensions/MediaInfoExt.py
 ln -s $(CWD)/MediaInfoExtHelpers.py ~/.local/share/nautilus-python/extensions/MediaInfoExtHelpers.py
